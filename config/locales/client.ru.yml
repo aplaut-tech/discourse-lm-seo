@@ -1,0 +1,9 @@
+ru:
+  admin_js:
+    admin:
+      lm_seo:
+        label: SEO
+        robots:
+          label: robots.txt
+        sitemap:
+          label: sitemap.xml
