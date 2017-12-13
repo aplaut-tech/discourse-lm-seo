@@ -1,0 +1,14 @@
+<form class="form-horizontal">
+  <div>
+    <label for="robots">{{i18n "admin.lm_seo.robots.robots"}}</label>
+    {{textarea value=robots}}
+  </div>
+
+  <div class="buttons">
+    {{#if saving}}
+      {{loading-spinner size="small"}}
+    {{else}}
+      {{d-button action="save" class="btn btn-primary" label="admin.lm_seo.robots.save"}}
+    {{/if}}
+  </div>
+</form>

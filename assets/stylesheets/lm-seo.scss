@@ -1,3 +1,29 @@
-.lm-seo-nav-button {
-  @extend .nav-pills;
+.admin-interface {
+
+  .nav.nav-pills > span, .admin-menu-outlet {
+    @extend .nav-pills;
+  }
+
+  .form-horizontal {
+    label {
+      font-weight: bold;
+    }
+
+    & > div {
+      margin-top: 10px;
+    }
+
+    input, textarea, select, .select-box {
+      width: 350px;
+    }
+
+    textarea {
+      min-height: 6em;
+    }
+
+    input[type="checkbox"], input[type="radio"] {
+      width: 20px;
+    }
+  }
+
 }

@@ -5,5 +5,7 @@ ru:
         label: SEO
         robots:
           label: robots.txt
+          robots: robots.txt
+          save: Сохранить
         sitemap:
           label: sitemap.xml
