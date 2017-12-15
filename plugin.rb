@@ -2,8 +2,6 @@
 # version: 0.0.1
 # authors: Shoppilot team
 
-PLUGIN_NS = 'lm_seo'
-
 register_asset 'stylesheets/lm-seo.scss'
 
 
@@ -11,6 +9,7 @@ after_initialize do
 
   require_dependency 'application_controller'
   require_dependency 'admin_constraint'
+  require_dependency 'jobs/regular/export_csv_file'
 
   module ::DiscourseSeo
     class Engine < ::Rails::Engine
@@ -32,9 +31,90 @@ after_initialize do
     get '/robots' => 'robots#show'
     put '/robots' => 'robots#update'
     get '/sitemap' => 'sitemap#show'
+    get '/topics' => 'topics#index'
+    post '/topics' => 'topics#import'
   end
 
 
+
+  ### Topics
+  Topic.register_custom_field_type('meta_title', :string)
+  Topic.register_custom_field_type('meta_description', :string)
+  Topic.register_custom_field_type('meta_keywords', :string)
+  Topic.register_custom_field_type('seo_text', :string)
+
+
+  class DiscourseSeo::TopicsController < ::ApplicationController
+    def index
+      render(nothing: true)
+    end
+
+    def import
+      file = params.require(:file)
+      importer = DiscourseSeo::TopicImporter.new(file)
+      importer.perform
+      render(json: success_json.merge(success_count: importer.success_count,
+        error_count: importer.error_count))
+    end
+  end
+
+
+  class DiscourseSeo::TopicImporter
+    attr_reader :success_count, :error_count
+
+    def initialize(import_file)
+      @import_file = import_file.tap(&:open)
+      @success_count = 0
+      @error_count = 0
+    end
+
+    def perform
+      CSV.parse(@import_file.read).each do |(id, _, title, seo_text, meta_title, meta_description, meta_keywords)|
+        topic = Topic.find(id.to_i) rescue next
+        topic.title = title
+        topic.custom_fields['seo_text'] = seo_text || ''
+        topic.custom_fields['meta_title'] = meta_title || ''
+        topic.custom_fields['meta_description'] = meta_description || ''
+        topic.custom_fields['meta_keywords'] = meta_keywords || ''
+        topic.save ? (@success_count += 1) : (@error_count += 1)
+      end
+    ensure
+      @import_file.close
+    end
+    self
+  end
+
+
+  Jobs::ExportCsvFile.class_eval do
+    self::HEADER_ATTRS_FOR[:topics_seo] = %w[id relative_url title seo_text meta_title meta_description meta_keywords]
+
+    def topics_seo_export
+      return enum_for(:topics_seo_export) unless block_given?
+
+      Topic.all.each do |topic|
+        yield get_topic_seo_fields(topic)
+      end
+    end
+
+    private
+
+    def get_topic_seo_fields(t)
+      cfs = t.custom_fields
+      [
+        t.id,
+        t.relative_url,
+        t.title,
+        cfs['seo_text'],
+        cfs['meta_title'],
+        cfs['meta_description'],
+        cfs['meta_keywords']
+      ]
+    end
+  end
+
+
+
+  ### Home ###
   class DiscourseSeo::HomeController < ::ApplicationController
     def index
       render(nothing: true)
@@ -42,9 +122,11 @@ after_initialize do
   end
 
 
+
+  ### Robots ###
   RobotsTxtController.class_eval do
     def index
-      robots = PluginStore.get(PLUGIN_NS, 'robots')
+      robots = PluginStore.get('lm_seo', 'robots')
       render(text: robots, content_type: 'text/plain')
     end
   end
@@ -52,18 +134,20 @@ after_initialize do
 
   class DiscourseSeo::RobotsController < ::ApplicationController
     def show
-      robots = PluginStore.get(PLUGIN_NS, 'robots')
+      robots = PluginStore.get('lm_seo', 'robots')
       render(json: success_json.merge(robots: robots))
     end
 
     def update
       robots = params[:robots]
-      PluginStore.set(PLUGIN_NS, 'robots', robots)
+      PluginStore.set('lm_seo', 'robots', robots)
       render(json: success_json)
     end
   end
 
 
+
+  ### Sitemap ###
   class DiscourseSeo::SitemapController < ::ApplicationController
     def show
       render(nothing: true)

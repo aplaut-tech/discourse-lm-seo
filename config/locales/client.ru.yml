@@ -5,7 +5,16 @@ ru:
         label: SEO
         robots:
           label: robots.txt
-          robots: robots.txt
+          title: Файл robots.txt
+          robots: Содержимое файла
           save: Сохранить
         sitemap:
           label: sitemap.xml
+          title: Карта сайта
+        topics:
+          label: Топики
+          title: Импорт и экспорт топиков
+          export: Экспорт
+          import: Импорт
+          import_description: Выберите CSV файл с топиками
+          import_report: "Топиков обновлено: {{success_count}}. Ошибок: {{error_count}}"
