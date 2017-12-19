@@ -2,6 +2,9 @@
 # version: 0.0.1
 # authors: Shoppilot team
 
+gem 'polyglot', '0.3.5'
+gem 'deface', '1.3.0', require_name: 'deface'
+
 register_asset 'stylesheets/lm-seo.scss'
 
 
@@ -10,6 +13,7 @@ after_initialize do
   require_dependency 'application_controller'
   require_dependency 'admin_constraint'
   require_dependency 'jobs/regular/export_csv_file'
+  require_dependency 'topic_view'
 
   module ::DiscourseSeo
     class Engine < ::Rails::Engine
@@ -86,12 +90,14 @@ after_initialize do
 
 
   Jobs::ExportCsvFile.class_eval do
-    self::HEADER_ATTRS_FOR[:topics_seo] = %w[id relative_url title seo_text meta_title meta_description meta_keywords]
+    self::HEADER_ATTRS_FOR[:topics_seo] = %w[
+      id relative_url title seo_text meta_title meta_description meta_keywords
+    ].freeze
 
     def topics_seo_export
       return enum_for(:topics_seo_export) unless block_given?
 
-      Topic.all.each do |topic|
+      Topic.where(archetype: Archetype.default).each do |topic|
         yield get_topic_seo_fields(topic)
       end
     end
@@ -111,6 +117,33 @@ after_initialize do
       ]
     end
   end
+
+
+  TopicView.class_eval do
+    def seo_page?
+      @page == 1 && [@username_filters, @filter, @post_number, @show_deleted].all?(&:blank?)
+    end
+
+    def seo_text
+      @_seo_text ||= @topic.custom_fields['seo_text'].presence
+    end
+
+    def seo_text?
+      !!seo_text
+    end
+  end
+
+
+  Deface::Override.new(
+    virtual_path: 'topics/show',
+    name: 'topics-show-seo-text',
+    insert_before: 'erb[silent]:contains("content_for :head do")',
+    text: <<-ERB
+      <% if include_crawler_content? && @topic_view.seo_page? && @topic_view.seo_text? %>
+        <p class="topic-seo-text"><%= @topic_view.seo_text %></p>
+      <% end %>
+    ERB
+  )
 
 
 
