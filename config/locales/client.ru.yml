@@ -13,8 +13,18 @@ ru:
           title: Карта сайта
         topics:
           label: Топики
-          title: Импорт и экспорт топиков
-          export: Экспорт
-          import: Импорт
-          import_description: Выберите CSV файл с топиками
-          import_report: "Топиков обновлено: {{success_count}}. Ошибок: {{error_count}}"
+          title: Настройка топиков
+          export:
+            label: Экспорт
+            export: Экспорт
+          import:
+            label: Импорт
+            description: Выберите CSV файл с топиками
+            report: "Топиков обновлено: {{success_count}}. Ошибок: {{error_count}}"
+          templates:
+            label: Шаблоны meta-тегов
+            meta_title: Title
+            meta_description: Meta description
+            meta_keywords: Meta keywords
+            save: Сохранить
+            report: Шаблоны meta-тегов топиков сохранены

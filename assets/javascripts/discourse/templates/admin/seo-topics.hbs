@@ -1,7 +1,19 @@
-<div class="lm-seo-topics">
-  <div class="admin-title">
+<div class="row lm-seo-topics">
+
+  {{!-- <div class="admin-title">
     <h2>{{i18n 'admin.lm_seo.topics.title'}}</h2>
+  </div> --}}
+
+  <div class="content-list span6">
+    <ul>
+      <li>{{#link-to 'adminSeo.topics.export'}}{{i18n 'admin.lm_seo.topics.export.label'}}{{/link-to}}</li>
+      <li>{{#link-to 'adminSeo.topics.import'}}{{i18n 'admin.lm_seo.topics.import.label'}}{{/link-to}}</li>
+      <li>{{#link-to 'adminSeo.topics.templates'}}{{i18n 'admin.lm_seo.topics.templates.label'}}{{/link-to}}</li>
+    </ul>
   </div>
 
-  {{seo-topics}}
+  <div class="content-editor">
+    {{outlet}}
+  </div>
+
 </div>

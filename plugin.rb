@@ -36,7 +36,14 @@ after_initialize do
     put '/robots' => 'robots#update'
     get '/sitemap' => 'sitemap#show'
     get '/topics' => 'topics#index'
-    post '/topics' => 'topics#import'
+
+    get '/topics/import' => 'topics_import#show'
+    post '/topics/import' => 'topics_import#import'
+
+    get '/topics/export' => 'topics_export#show'
+
+    get '/topics/templates' => 'topics_templates#show'
+    put '/topics/templates' => 'topics_templates#update'
   end
 
 
@@ -52,6 +59,13 @@ after_initialize do
     def index
       render(nothing: true)
     end
+  end
+
+
+  class DiscourseSeo::TopicsImportController < ::ApplicationController
+    def show
+      render(nothing: true)
+    end
 
     def import
       file = params.require(:file)
@@ -59,6 +73,32 @@ after_initialize do
       importer.perform
       render(json: success_json.merge(success_count: importer.success_count,
         error_count: importer.error_count))
+    end
+  end
+
+
+  class DiscourseSeo::TopicsExportController < ::ApplicationController
+    def show
+      render(nothing: true)
+    end
+  end
+
+
+  class DiscourseSeo::TopicsTemplatesController < ::ApplicationController
+    def show
+      respond_to do |format|
+        format.html { render(nothing: true) }
+        format.json do
+          templates = PluginStore.get('lm_seo', 'topics_templates') || {}
+          render(json: success_json.merge(templates: templates))
+        end
+      end
+    end
+
+    def update
+      templates = params.require(:templates).permit(:meta_title, :meta_description, :meta_keywords)
+      PluginStore.set('lm_seo', 'topics_templates', templates)
+      render(json: success_json)
     end
   end
 
@@ -179,8 +219,13 @@ after_initialize do
 
   class DiscourseSeo::RobotsController < ::ApplicationController
     def show
-      robots = PluginStore.get('lm_seo', 'robots')
-      render(json: success_json.merge(robots: robots))
+      respond_to do |format|
+        format.html { render(nothing: true) }
+        format.json do
+          robots = PluginStore.get('lm_seo', 'robots')
+          render(json: success_json.merge(robots: robots))
+        end
+      end
     end
 
     def update
