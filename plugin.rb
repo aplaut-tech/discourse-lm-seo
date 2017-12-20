@@ -134,6 +134,7 @@ after_initialize do
   end
 
 
+  # Seo text
   Deface::Override.new(
     virtual_path: 'topics/show',
     name: 'topics-show-seo-text',
@@ -142,6 +143,17 @@ after_initialize do
       <% if include_crawler_content? && @topic_view.seo_page? && @topic_view.seo_text? %>
         <p class="topic-seo-text"><%= @topic_view.seo_text %></p>
       <% end %>
+    ERB
+  )
+
+
+  # Non-anchor topic title
+  Deface::Override.new(
+    virtual_path: 'topics/show',
+    name: 'topics-show-h1',
+    replace_contents: 'h1',
+    text: <<-ERB
+      <%= Emoji.gsub_emoji_to_unicode(@topic_view.title) %>
     ERB
   )
 
