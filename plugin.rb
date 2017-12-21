@@ -4,6 +4,7 @@
 
 gem 'polyglot', '0.3.5'
 gem 'deface', '1.3.0', require_name: 'deface'
+gem 'liquid', '4.0.0'
 
 register_asset 'stylesheets/lm-seo.scss'
 
@@ -42,8 +43,8 @@ after_initialize do
 
     get '/topics/export' => 'topics_export#show'
 
-    get '/topics/templates' => 'topics_templates#show'
-    put '/topics/templates' => 'topics_templates#update'
+    get '/topics/templates' => 'topics_seo_templates#show'
+    put '/topics/templates' => 'topics_seo_templates#update'
   end
 
 
@@ -84,12 +85,12 @@ after_initialize do
   end
 
 
-  class DiscourseSeo::TopicsTemplatesController < ::ApplicationController
+  class DiscourseSeo::TopicsSeoTemplatesController < ::ApplicationController
     def show
       respond_to do |format|
         format.html { render(nothing: true) }
         format.json do
-          templates = PluginStore.get('lm_seo', 'topics_templates') || {}
+          templates = PluginStore.get('lm_seo', 'topics_seo_templates') || {}
           render(json: success_json.merge(templates: templates))
         end
       end
@@ -97,7 +98,7 @@ after_initialize do
 
     def update
       templates = params.require(:templates).permit(:meta_title, :meta_description, :meta_keywords)
-      PluginStore.set('lm_seo', 'topics_templates', templates)
+      PluginStore.set('lm_seo', 'topics_seo_templates', templates)
       render(json: success_json)
     end
   end
@@ -116,10 +117,10 @@ after_initialize do
       CSV.parse(@import_file.read).each do |(id, _, title, seo_text, meta_title, meta_description, meta_keywords)|
         topic = Topic.find(id.to_i) rescue next
         topic.title = title
-        topic.custom_fields['seo_text'] = seo_text || ''
-        topic.custom_fields['meta_title'] = meta_title || ''
-        topic.custom_fields['meta_description'] = meta_description || ''
-        topic.custom_fields['meta_keywords'] = meta_keywords || ''
+        topic.custom_fields['seo_text'] = seo_text
+        topic.custom_fields['meta_title'] = meta_title
+        topic.custom_fields['meta_description'] = meta_description
+        topic.custom_fields['meta_keywords'] = meta_keywords
         topic.save ? (@success_count += 1) : (@error_count += 1)
       end
     ensure
@@ -159,8 +160,50 @@ after_initialize do
   end
 
 
+  TopicsController.class_eval do
+    def perform_show_response
+
+      if request.head?
+        head :ok
+        return
+      end
+
+      topic_view_serializer = TopicViewSerializer.new(@topic_view, scope: guardian, root: false, include_raw: !!params[:include_raw])
+
+      respond_to do |format|
+        format.html do
+          @title = @topic_view.meta_title
+          @description_meta = @topic_view.meta_description
+          @keywords_meta = @topic_view.meta_keywords
+          store_preloaded("topic_#{@topic_view.topic.id}", MultiJson.dump(topic_view_serializer))
+          render :show
+        end
+
+        format.json do
+          render_json_dump(topic_view_serializer)
+        end
+      end
+    end
+  end
+
+
   TopicView.class_eval do
-    def seo_page?
+    def meta_title
+      @_meta_title ||= @topic.custom_fields['meta_title'].presence ||
+        render_default_seo_template(:meta_title)
+    end
+
+    def meta_description
+      @_meta_description ||= @topic.custom_fields['meta_description'].presence ||
+        render_default_seo_template(:meta_description)
+    end
+
+    def meta_keywords
+      @_meta_keywords ||= @topic.custom_fields['meta_keywords'].presence ||
+        render_default_seo_template(:meta_keywords)
+    end
+
+    def canonical_page?
       @page == 1 && [@username_filters, @filter, @post_number, @show_deleted].all?(&:blank?)
     end
 
@@ -171,6 +214,26 @@ after_initialize do
     def seo_text?
       !!seo_text
     end
+
+    private
+
+    def render_default_seo_template(template_name)
+      template = default_seo_templates[template_name.to_s].presence or return
+      variables = {
+        topic: {
+          title: @topic.title
+        },
+        category: {
+          name: @topic.category.try(:name)
+        },
+        page: @page
+      }.deep_stringify_keys
+      Liquid::Template.parse(template).render(variables)
+    end
+
+    def default_seo_templates
+      @_default_seo_templates ||= PluginStore.get('lm_seo', 'topics_seo_templates') || {}
+    end
   end
 
 
@@ -180,12 +243,11 @@ after_initialize do
     name: 'topics-show-seo-text',
     insert_before: 'erb[silent]:contains("content_for :head do")',
     text: <<-ERB
-      <% if include_crawler_content? && @topic_view.seo_page? && @topic_view.seo_text? %>
+      <% if include_crawler_content? && @topic_view.canonical_page? && @topic_view.seo_text? %>
         <p class="topic-seo-text"><%= @topic_view.seo_text %></p>
       <% end %>
     ERB
   )
-
 
   # Non-anchor topic title
   Deface::Override.new(
@@ -194,6 +256,16 @@ after_initialize do
     replace_contents: 'h1',
     text: <<-ERB
       <%= Emoji.gsub_emoji_to_unicode(@topic_view.title) %>
+    ERB
+  )
+
+  # Meta keywords
+  Deface::Override.new(
+    virtual_path: 'layouts/application',
+    name: 'meta-keywords',
+    insert_after: 'meta[name="description"]',
+    text: <<-ERB
+      <meta name="keywords" content="<%= @keywords_meta %>">
     ERB
   )
 
