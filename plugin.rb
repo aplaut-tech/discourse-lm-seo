@@ -15,6 +15,7 @@ after_initialize do
   require_dependency 'admin_constraint'
   require_dependency 'jobs/regular/export_csv_file'
   require_dependency 'topic_view'
+  require_dependency 'topics_helper'
 
   module ::DiscourseSeo
     class Engine < ::Rails::Engine
@@ -242,11 +243,11 @@ after_initialize do
     virtual_path: 'topics/show',
     name: 'topics-show-seo-text',
     insert_before: 'erb[silent]:contains("content_for :head do")',
-    text: <<-ERB
+    text: <<-HTML
       <% if include_crawler_content? && @topic_view.canonical_page? && @topic_view.seo_text? %>
         <p class="topic-seo-text"><%= @topic_view.seo_text %></p>
       <% end %>
-    ERB
+    HTML
   )
 
   # Non-anchor topic title
@@ -254,9 +255,9 @@ after_initialize do
     virtual_path: 'topics/show',
     name: 'topics-show-h1',
     replace_contents: 'h1',
-    text: <<-ERB
+    text: <<-HTML
       <%= Emoji.gsub_emoji_to_unicode(@topic_view.title) %>
-    ERB
+    HTML
   )
 
   # Meta keywords
@@ -264,10 +265,33 @@ after_initialize do
     virtual_path: 'layouts/application',
     name: 'meta-keywords',
     insert_after: 'meta[name="description"]',
-    text: <<-ERB
+    text: <<-HTML
       <meta name="keywords" content="<%= @keywords_meta %>">
-    ERB
+    HTML
   )
+
+  # Topic breadcrumbs
+  Deface::Override.new(
+    virtual_path: 'topics/show',
+    name: 'topics-show-breadcrumbs',
+    replace: '#breadcrumbs',
+    text: <<-HTML
+      <div id="breadcrumbs" itemscope itemtype="http://schema.org/BreadcrumbList">
+        <% @breadcrumbs.each_with_index do |bc, i| %>
+          <div itemscope itemtype="http://schema.org/ListItem" itemprop="itemListElement">
+            <a href="<%= bc[:url] %>" itemprop="item">
+              <span itemprop="name"><%= bc[:name] %></span>
+              <meta itemprop="position" content="<%= i + 1 %>" />
+            </a>
+          </div>
+        <% end %>
+      </div>
+    HTML
+  )
+
+  Plugin::Filter.register(:topic_categories_breadcrumb) do |topic, breadcrumb|
+    [{ url: '/', name: I18n.t('lm_seo.root_breadcrumb') }, *breadcrumb]
+  end
 
 
 
