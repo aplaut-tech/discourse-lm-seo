@@ -1,0 +1,28 @@
+<div class="form-horizontal templates-form">
+
+  <div class="inputs">
+    <div class="input">
+      <label for="categories-title-template">{{i18n 'admin.lm_seo.categories.templates.meta_title'}}</label>
+      {{input value=templates.meta_title}}
+    </div>
+
+    <div class="input">
+      <label for="categories-description-template">{{i18n 'admin.lm_seo.categories.templates.meta_description'}}</label>
+      {{input value=templates.meta_description}}
+    </div>
+
+    <div class="input">
+      <label for="categories-keywords-template">{{i18n 'admin.lm_seo.categories.templates.meta_keywords'}}</label>
+      {{input value=templates.meta_keywords}}
+    </div>
+  </div>
+
+  <div class="buttons">
+    {{#if saving}}
+      {{loading-spinner size="small"}}
+    {{else}}
+      {{d-button icon="download" action="save" class="btn btn-primary" label="admin.lm_seo.categories.templates.save"}}
+    {{/if}}
+  </div>
+
+</div>

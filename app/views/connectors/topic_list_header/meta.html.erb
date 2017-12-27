@@ -1,0 +1,12 @@
+<%
+  if @category
+    meta_templates_renderer = DiscourseSeo::MetaTemplatesRenderer.new(:categories)
+    meta_template_variables = {
+      category: { name: @category.name },
+      page: params[:page].try(:to_i) || 1
+    }
+    @title = meta_templates_renderer.render(:meta_title, meta_template_variables)
+    @description_meta = meta_templates_renderer.render(:meta_description, meta_template_variables)
+    @keywords_meta = meta_templates_renderer.render(:meta_keywords, meta_template_variables)
+  end
+%>

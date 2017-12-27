@@ -37,6 +37,7 @@ after_initialize do
     get '/robots' => 'robots#show'
     put '/robots' => 'robots#update'
     get '/sitemap' => 'sitemap#show'
+
     get '/topics' => 'topics#index'
 
     get '/topics/import' => 'topics_import#show'
@@ -46,21 +47,51 @@ after_initialize do
 
     get '/topics/templates' => 'topics_seo_templates#show'
     put '/topics/templates' => 'topics_seo_templates#update'
+
+    get '/categories' => 'categories#index'
+
+    get '/categories/templates' => 'categories_seo_templates#show'
+    put '/categories/templates' => 'categories_seo_templates#update'
   end
 
 
 
-  ### Topics
+  ### Topics & Categories
   Topic.register_custom_field_type('meta_title', :string)
   Topic.register_custom_field_type('meta_description', :string)
   Topic.register_custom_field_type('meta_keywords', :string)
   Topic.register_custom_field_type('seo_text', :string)
 
 
-  class DiscourseSeo::TopicsController < ::ApplicationController
-    def index
-      render(nothing: true)
-    end
+  %w[category topic].each do |subject|
+    subjects = subject.pluralize
+    subjects_cap = subject.classify.pluralize
+
+    class_eval <<-RUBY, __FILE__, __LINE__.next
+      class DiscourseSeo::#{subjects_cap}Controller < ::ApplicationController
+        def index
+          render(nothing: true)
+        end
+      end
+
+      class DiscourseSeo::#{subjects_cap}SeoTemplatesController < ::ApplicationController
+        def show
+          respond_to do |format|
+            format.html { render(nothing: true) }
+            format.json do
+              templates = PluginStore.get('lm_seo', "#{subjects}_seo_templates") || {}
+              render(json: success_json.merge(templates: templates))
+            end
+          end
+        end
+
+        def update
+          templates = params.require(:templates).permit(:meta_title, :meta_description, :meta_keywords)
+          PluginStore.set('lm_seo', "#{subjects}_seo_templates", templates)
+          render(json: success_json)
+        end
+      end
+    RUBY
   end
 
 
@@ -82,25 +113,6 @@ after_initialize do
   class DiscourseSeo::TopicsExportController < ::ApplicationController
     def show
       render(nothing: true)
-    end
-  end
-
-
-  class DiscourseSeo::TopicsSeoTemplatesController < ::ApplicationController
-    def show
-      respond_to do |format|
-        format.html { render(nothing: true) }
-        format.json do
-          templates = PluginStore.get('lm_seo', 'topics_seo_templates') || {}
-          render(json: success_json.merge(templates: templates))
-        end
-      end
-    end
-
-    def update
-      templates = params.require(:templates).permit(:meta_title, :meta_description, :meta_keywords)
-      PluginStore.set('lm_seo', 'topics_seo_templates', templates)
-      render(json: success_json)
     end
   end
 
@@ -161,47 +173,38 @@ after_initialize do
   end
 
 
-  TopicsController.class_eval do
-    def perform_show_response
+  class DiscourseSeo::MetaTemplatesRenderer
+    # templates_type is topics or categories
+    def initialize(templates_type)
+      @templates = PluginStore.get('lm_seo', "#{templates_type}_seo_templates") || {}
+    end
 
-      if request.head?
-        head :ok
-        return
-      end
-
-      topic_view_serializer = TopicViewSerializer.new(@topic_view, scope: guardian, root: false, include_raw: !!params[:include_raw])
-
-      respond_to do |format|
-        format.html do
-          @title = @topic_view.meta_title
-          @description_meta = @topic_view.meta_description
-          @keywords_meta = @topic_view.meta_keywords
-          store_preloaded("topic_#{@topic_view.topic.id}", MultiJson.dump(topic_view_serializer))
-          render :show
-        end
-
-        format.json do
-          render_json_dump(topic_view_serializer)
-        end
-      end
+    def render(template_name, variables)
+      template = @templates[template_name.to_s].presence || ''
+      Liquid::Template.parse(template).render(variables.deep_stringify_keys)
     end
   end
 
 
-  TopicView.class_eval do
+  TopicView.prepend Module.new {
+    def initialize(*)
+      super
+      @meta_templates_renderer = DiscourseSeo::MetaTemplatesRenderer.new(:topics)
+    end
+
     def meta_title
       @_meta_title ||= @topic.custom_fields['meta_title'].presence ||
-        render_default_seo_template(:meta_title)
+        render_default_meta_template(:meta_title)
     end
 
     def meta_description
       @_meta_description ||= @topic.custom_fields['meta_description'].presence ||
-        render_default_seo_template(:meta_description)
+        render_default_meta_template(:meta_description)
     end
 
     def meta_keywords
       @_meta_keywords ||= @topic.custom_fields['meta_keywords'].presence ||
-        render_default_seo_template(:meta_keywords)
+        render_default_meta_template(:meta_keywords)
     end
 
     def canonical_page?
@@ -218,9 +221,8 @@ after_initialize do
 
     private
 
-    def render_default_seo_template(template_name)
-      template = default_seo_templates[template_name.to_s].presence or return
-      variables = {
+    def render_default_meta_template(template_name)
+      @meta_templates_renderer.render(template_name, {
         topic: {
           title: @topic.title
         },
@@ -228,14 +230,9 @@ after_initialize do
           name: @topic.category.try(:name)
         },
         page: @page
-      }.deep_stringify_keys
-      Liquid::Template.parse(template).render(variables)
+      })
     end
-
-    def default_seo_templates
-      @_default_seo_templates ||= PluginStore.get('lm_seo', 'topics_seo_templates') || {}
-    end
-  end
+  }
 
 
   # Seo text
@@ -289,8 +286,9 @@ after_initialize do
     HTML
   )
 
+
   Plugin::Filter.register(:topic_categories_breadcrumb) do |topic, breadcrumb|
-    [{ url: '/', name: I18n.t('lm_seo.root_breadcrumb') }, *breadcrumb]
+    [{ url: '/', name: I18n.t('lm_seo.breadcrumbs.root') }, *breadcrumb]
   end
 
 

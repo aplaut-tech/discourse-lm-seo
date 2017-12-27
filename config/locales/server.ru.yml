@@ -1,3 +1,4 @@
 ru:
   lm_seo:
-    root_breadcrumb: Форум
+    breadcrumbs:
+      root: Форум
