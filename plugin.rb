@@ -34,9 +34,9 @@ after_initialize do
 
   DiscourseSeo::Engine.routes.draw do
     get '/' => 'home#index'
+
     get '/robots' => 'robots#show'
     put '/robots' => 'robots#update'
-    get '/sitemap' => 'sitemap#show'
 
     get '/topics' => 'topics#index'
 
