@@ -1,0 +1,9 @@
+<form class="form-horizontal export-form">
+  <div class="inputs">
+    {{#if exporting}}
+      {{loading-spinner size="small"}}
+    {{else}}
+      {{d-button icon="download" action="export" class="btn btn-primary" label="admin.lm_seo.categories.export.export"}}
+    {{/if}}
+  </div>
+</form>

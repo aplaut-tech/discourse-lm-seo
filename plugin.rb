@@ -39,17 +39,16 @@ after_initialize do
     put '/robots' => 'robots#update'
 
     get '/topics' => 'topics#index'
-
     get '/topics/import' => 'topics_import#show'
     post '/topics/import' => 'topics_import#import'
-
     get '/topics/export' => 'topics_export#show'
-
     get '/topics/templates' => 'topics_seo_templates#show'
     put '/topics/templates' => 'topics_seo_templates#update'
 
     get '/categories' => 'categories#index'
-
+    get '/categories/import' => 'categories_import#show'
+    post '/categories/import' => 'categories_import#import'
+    get '/categories/export' => 'categories_export#show'
     get '/categories/templates' => 'categories_seo_templates#show'
     put '/categories/templates' => 'categories_seo_templates#update'
   end
@@ -57,15 +56,16 @@ after_initialize do
 
 
   ### Topics & Categories
-  Topic.register_custom_field_type('meta_title', :string)
-  Topic.register_custom_field_type('meta_description', :string)
-  Topic.register_custom_field_type('meta_keywords', :string)
-  Topic.register_custom_field_type('seo_text', :string)
-
-
   %w[category topic].each do |subject|
     subjects = subject.pluralize
     subjects_cap = subject.classify.pluralize
+    subject_klass_name = subject.classify
+    subject_klass = subject_klass_name.constantize
+
+    subject_klass.register_custom_field_type('meta_title', :string)
+    subject_klass.register_custom_field_type('meta_description', :string)
+    subject_klass.register_custom_field_type('meta_keywords', :string)
+    subject_klass.register_custom_field_type('seo_text', :string)
 
     class_eval <<-RUBY, __FILE__, __LINE__.next
       class DiscourseSeo::#{subjects_cap}Controller < ::ApplicationController
@@ -73,6 +73,7 @@ after_initialize do
           render(nothing: true)
         end
       end
+
 
       class DiscourseSeo::#{subjects_cap}SeoTemplatesController < ::ApplicationController
         def show
@@ -91,44 +92,53 @@ after_initialize do
           render(json: success_json)
         end
       end
+
+
+      class DiscourseSeo::#{subjects_cap}ImportController < ::ApplicationController
+        def show
+          render(nothing: true)
+        end
+
+        def import
+          file = params.require(:file)
+          importer = DiscourseSeo::#{subject_klass_name}Importer.new(file)
+          importer.perform
+          render(json: success_json.merge(success_count: importer.success_count,
+            error_count: importer.error_count))
+        end
+      end
+
+
+      class DiscourseSeo::#{subjects_cap}ExportController < ::ApplicationController
+        def show
+          render(nothing: true)
+        end
+      end
     RUBY
   end
 
 
-  class DiscourseSeo::TopicsImportController < ::ApplicationController
-    def show
-      render(nothing: true)
-    end
 
-    def import
-      file = params.require(:file)
-      importer = DiscourseSeo::TopicImporter.new(file)
-      importer.perform
-      render(json: success_json.merge(success_count: importer.success_count,
-        error_count: importer.error_count))
-    end
-  end
-
-
-  class DiscourseSeo::TopicsExportController < ::ApplicationController
-    def show
-      render(nothing: true)
-    end
-  end
-
-
-  class DiscourseSeo::TopicImporter
+  class DiscourseSeo::FileImporter
     attr_reader :success_count, :error_count
 
     def initialize(import_file)
-      @import_file = import_file.tap(&:open)
+      @import_file = import_file
       @success_count = 0
       @error_count = 0
     end
 
     def perform
+      raise NotImplementedError
+    end
+  end
+
+  class DiscourseSeo::TopicImporter < DiscourseSeo::FileImporter
+    def perform
+      @import_file.open
       CSV.parse(@import_file.read).each do |(id, _, title, seo_text, meta_title, meta_description, meta_keywords)|
-        topic = Topic.find(id.to_i) rescue next
+        next if id == 'id' # Header row
+        topic = Topic.find(id.to_i) rescue ((@error_count += 1); next)
         topic.title = title
         topic.custom_fields['seo_text'] = seo_text
         topic.custom_fields['meta_title'] = meta_title
@@ -136,10 +146,29 @@ after_initialize do
         topic.custom_fields['meta_keywords'] = meta_keywords
         topic.save ? (@success_count += 1) : (@error_count += 1)
       end
+      self
     ensure
       @import_file.close
     end
-    self
+  end
+
+  class DiscourseSeo::CategoryImporter < DiscourseSeo::FileImporter
+    def perform
+      @import_file.open
+      CSV.parse(@import_file.read).each do |(id, _, name, seo_text, meta_title, meta_description, meta_keywords)|
+        next if id == 'id' # Header row
+        category = Category.find(id.to_i) rescue ((@error_count += 1); next)
+        category.name = name
+        category.custom_fields['seo_text'] = seo_text
+        category.custom_fields['meta_title'] = meta_title
+        category.custom_fields['meta_description'] = meta_description
+        category.custom_fields['meta_keywords'] = meta_keywords
+        category.save ? (@success_count += 1) : (@error_count += 1)
+      end
+      self
+    ensure
+      @import_file.close
+    end
   end
 
 
@@ -148,11 +177,23 @@ after_initialize do
       id relative_url title seo_text meta_title meta_description meta_keywords
     ].freeze
 
+    self::HEADER_ATTRS_FOR[:categories_seo] = %w[
+      id relative_url name seo_text meta_title meta_description meta_keywords
+    ].freeze
+
     def topics_seo_export
       return enum_for(:topics_seo_export) unless block_given?
 
       Topic.where(archetype: Archetype.default).each do |topic|
         yield get_topic_seo_fields(topic)
+      end
+    end
+
+    def categories_seo_export
+      return enum_for(:categories_seo_export) unless block_given?
+
+      Category.all.each do |category|
+        yield get_category_seo_fields(category)
       end
     end
 
@@ -170,97 +211,95 @@ after_initialize do
         cfs['meta_keywords']
       ]
     end
+
+    def get_category_seo_fields(c)
+      cfs = c.custom_fields
+      [
+        c.id,
+        c.url,
+        c.name,
+        cfs['seo_text'],
+        cfs['meta_title'],
+        cfs['meta_description'],
+        cfs['meta_keywords']
+      ]
+    end
   end
 
 
-  class DiscourseSeo::MetaTemplatesRenderer
+  class DiscourseSeo::SeoFieldsRenderer
     # templates_type is topics or categories
-    def initialize(templates_type)
-      @templates = PluginStore.get('lm_seo', "#{templates_type}_seo_templates") || {}
+    def initialize(object, params)
+      object_type = object.class.name.underscore.pluralize
+      @fields = object.custom_fields
+      @templates = PluginStore.get('lm_seo', "#{object_type}_seo_templates") || {}
+      @template_variables = prepare_template_variables(object, params).deep_stringify_keys
     end
 
-    def render(template_name, variables)
-      template = @templates[template_name.to_s].presence || ''
-      Liquid::Template.parse(template).render(variables.deep_stringify_keys)
+    def field(name)
+      @fields[name.to_s]
+    end
+
+    def field?(name)
+      field(name).present?
+    end
+
+    def field_or_template(field_name)
+      if field?(field_name)
+        field(field_name)
+      else
+        template = @templates[field_name.to_s].presence || ''
+        Liquid::Template.parse(template).render(@template_variables)
+      end
+    end
+
+    private
+
+    def prepare_template_variables(object, params)
+      raise NotImplementedError
+    end
+  end
+
+  class DiscourseSeo::TopicSeoFieldsRenderer < DiscourseSeo::SeoFieldsRenderer
+    private def prepare_template_variables(topic, params)
+      {
+        topic: {
+          title: topic.title
+        },
+        category: {
+          name: topic.category.try(:name)
+        },
+        page: params[:page].try(:to_i) || 1
+      }
+    end
+  end
+
+  class DiscourseSeo::CategorySeoFieldsRenderer < DiscourseSeo::SeoFieldsRenderer
+    private def prepare_template_variables(category, params)
+      {
+        category: {
+          name: category.name
+        },
+        parent_category: {
+          name: category.try(:parent_category).try(:name)
+        },
+        page: params[:page].try(:to_i) || 1
+      }
     end
   end
 
 
   TopicView.prepend Module.new {
-    def initialize(*)
-      super
-      @meta_templates_renderer = DiscourseSeo::MetaTemplatesRenderer.new(:topics)
-    end
-
-    def meta_title
-      @_meta_title ||= @topic.custom_fields['meta_title'].presence ||
-        render_default_meta_template(:meta_title)
-    end
-
-    def meta_description
-      @_meta_description ||= @topic.custom_fields['meta_description'].presence ||
-        render_default_meta_template(:meta_description)
-    end
-
-    def meta_keywords
-      @_meta_keywords ||= @topic.custom_fields['meta_keywords'].presence ||
-        render_default_meta_template(:meta_keywords)
-    end
-
-    def canonical_page?
+    def canonical_page? # TODO
       @page == 1 && [@username_filters, @filter, @post_number, @show_deleted].all?(&:blank?)
-    end
-
-    def seo_text
-      @_seo_text ||= @topic.custom_fields['seo_text'].presence
-    end
-
-    def seo_text?
-      !!seo_text
-    end
-
-    private
-
-    def render_default_meta_template(template_name)
-      @meta_templates_renderer.render(template_name, {
-        topic: {
-          title: @topic.title
-        },
-        category: {
-          name: @topic.category.try(:name)
-        },
-        page: @page
-      })
     end
   }
 
 
-  # Seo text
-  Deface::Override.new(
-    virtual_path: 'topics/show',
-    name: 'topics-show-seo-text',
-    insert_before: 'erb[silent]:contains("content_for :head do")',
-    text: <<-HTML
-      <% if include_crawler_content? && @topic_view.canonical_page? && @topic_view.seo_text? %>
-        <p class="topic-seo-text"><%= @topic_view.seo_text %></p>
-      <% end %>
-    HTML
-  )
-
-  # Non-anchor topic title
-  Deface::Override.new(
-    virtual_path: 'topics/show',
-    name: 'topics-show-h1',
-    replace_contents: 'h1',
-    text: <<-HTML
-      <%= Emoji.gsub_emoji_to_unicode(@topic_view.title) %>
-    HTML
-  )
-
   # Meta keywords
   Deface::Override.new(
     virtual_path: 'layouts/application',
-    name: 'meta-keywords',
+    name: 'seo-meta-keywords',
     insert_after: 'meta[name="description"]',
     text: <<-HTML
       <meta name="keywords" content="<%= @keywords_meta %>">
@@ -270,7 +309,7 @@ after_initialize do
   # Topic breadcrumbs
   Deface::Override.new(
     virtual_path: 'topics/show',
-    name: 'topics-show-breadcrumbs',
+    name: 'seo-topic-breadcrumbs',
     replace: '#breadcrumbs',
     text: <<-HTML
       <div id="breadcrumbs" itemscope itemtype="http://schema.org/BreadcrumbList">
@@ -283,6 +322,44 @@ after_initialize do
           </div>
         <% end %>
       </div>
+    HTML
+  )
+
+  # Topic SEO text
+  Deface::Override.new(
+    virtual_path: 'topics/show',
+    name: 'seo-topic-seo-text',
+    insert_before: 'erb[silent]:contains("content_for :head do")',
+    text: <<-HTML
+      <% seo_fields_renderer = DiscourseSeo::TopicSeoFieldsRenderer.new(@topic_view.topic, params) %>
+      <% if include_crawler_content? && @topic_view.canonical_page? && seo_fields_renderer.field?(:seo_text) %>
+        <p class="topic-seo-text"><%= seo_fields_renderer.field(:seo_text) %></p>
+      <% end %>
+    HTML
+  )
+
+  # Category SEO text
+  Deface::Override.new(
+    virtual_path: 'list/list',
+    name: 'seo-category-seo-text',
+    insert_after: 'div[role="navigation"]',
+    text: <<-HTML
+      <% if @category && include_crawler_content? && (params[:page].blank? || params[:page].try(:to_i) == 1) %>
+        <% seo_fields_renderer = DiscourseSeo::CategorySeoFieldsRenderer.new(@category, params) %>
+        <% if seo_fields_renderer.field?(:seo_text) %>
+          <p class="topic-seo-text"><%= seo_fields_renderer.field(:seo_text) %></p>
+        <% end %>
+      <% end %>
+    HTML
+  )
+
+  # Remove anchor from topic title
+  Deface::Override.new(
+    virtual_path: 'topics/show',
+    name: 'seo-topic-h1',
+    replace_contents: 'h1',
+    text: <<-HTML
+      <%= Emoji.gsub_emoji_to_unicode(@topic_view.title) %>
     HTML
   )
 

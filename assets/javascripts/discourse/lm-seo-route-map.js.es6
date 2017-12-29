@@ -11,6 +11,8 @@ export default {
         this.route('templates', {path: '/templates'});
       });
       this.route('categories', {path: '/categories'}, function () {
+        this.route('export', {path: '/export'});
+        this.route('import', {path: '/import'});
         this.route('templates', {path: '/templates'});
       });
     });

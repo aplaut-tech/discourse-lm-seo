@@ -31,6 +31,13 @@ ru:
         categories:
           label: Категории
           title: Настройка категорий
+          export:
+            label: Экспорт
+            export: Экспорт
+          import:
+            label: Импорт
+            description: Выберите CSV файл с категориями
+            report: "Категорий обновлено: {{success_count}}. Ошибок: {{error_count}}"
           templates:
             label: Шаблоны meta-тегов
             meta_title: Title

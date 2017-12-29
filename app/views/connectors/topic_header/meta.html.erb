@@ -1,5 +1,6 @@
 <%
-  @title = @topic_view.meta_title
-  @description_meta = @topic_view.meta_description
-  @keywords_meta = @topic_view.meta_keywords
+  seo_fields_renderer = DiscourseSeo::TopicSeoFieldsRenderer.new(@topic_view.topic, params)
+  @title = seo_fields_renderer.field_or_template(:meta_title)
+  @description_meta = seo_fields_renderer.field_or_template(:meta_description)
+  @keywords_meta = seo_fields_renderer.field_or_template(:meta_keywords)
 %>
