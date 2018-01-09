@@ -415,4 +415,17 @@ after_initialize do
     end
   end
 
+  ### Redirect on the same topic without post_number for crawlers ###
+  TopicsController.class_eval do
+    before_filter only: :show do
+      if (CrawlerDetection.crawler?(request.user_agent) && params[:post_number].present?)
+        url = "/t/#{params[:slug]}/#{params[:topic_id]}"
+        page, _ = (params[:post_number].to_i - 1).divmod(TopicView.chunk_size)
+        page = page + 1
+        url << "?page=#{page}" if page > 1
+        redirect_to url
+      end
+    end
+  end
+
 end
